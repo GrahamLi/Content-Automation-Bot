@@ -167,31 +167,43 @@ def get_youtube_transcript_improved_v2(video_id, max_retries=3):
                 transcript_list = TranscriptAPI.get_transcript(
                     video_id, languages=preferred_langs)
             except AttributeError:
-                # Compatibility path (older/different versions)
-                transcripts = TranscriptAPI.list_transcripts(video_id)
+                # Compatibility paths (older/different versions)
+                # A) list_transcripts API
+                try:
+                    transcripts = TranscriptAPI.list_transcripts(video_id)
 
-                # Try per-language match first
-                for lang in preferred_langs:
-                    try:
-                        t = transcripts.find_transcript([lang])
-                        transcript_list = t.fetch()
-                        break
-                    except Exception:
-                        continue
-
-                # Then try manual or generated across preferred langs
-                if transcript_list is None:
-                    try:
-                        t = transcripts.find_manually_created_transcript(
-                            preferred_langs)
-                        transcript_list = t.fetch()
-                    except Exception:
+                    # Try per-language match first
+                    for lang in preferred_langs:
                         try:
-                            t = transcripts.find_generated_transcript(
+                            t = transcripts.find_transcript([lang])
+                            transcript_list = t.fetch()
+                            break
+                        except Exception:
+                            continue
+
+                    # Then try manual or generated across preferred langs
+                    if transcript_list is None:
+                        try:
+                            t = transcripts.find_manually_created_transcript(
                                 preferred_langs)
                             transcript_list = t.fetch()
                         except Exception:
-                            pass
+                            try:
+                                t = transcripts.find_generated_transcript(
+                                    preferred_langs)
+                                transcript_list = t.fetch()
+                            except Exception:
+                                pass
+                except AttributeError:
+                    # B) get_transcripts API (batch)
+                    try:
+                        transcripts_map, _errors = TranscriptAPI.get_transcripts(
+                            [video_id], languages=preferred_langs)
+                        tl = transcripts_map.get(video_id)
+                        if tl:
+                            transcript_list = tl
+                    except Exception:
+                        pass
 
             if transcript_list:
                 return " ".join(item.get('text', '') for item in transcript_list)
