@@ -1,0 +1,13 @@
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2
+youtube-transcript-api
+feedparser
+requests
+beautifulsoup4
+pytube
+google-generativeai
+yt-dlp
+# 以下為語音轉文字的函式庫，安裝時間較長
+# pip install git+https://github.com/openai/whisper.git
+# pip install ffmpeg-python

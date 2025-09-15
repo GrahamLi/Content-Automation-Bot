@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.env
+
+# OS
+.DS_Store
+
+# Secrets
+config.json
+
+# Generated artifacts
+output/
+temp_audio/
+processed_ids.txt
+failed_ids.txt
+corrected_code.txt
+
