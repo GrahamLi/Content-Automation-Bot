@@ -17,6 +17,7 @@ python -m venv .venv
 pip install -r requirements.txt
 python main.py
 ```
+- Offline transcript fallback requires additional tools: `yt-dlp`, `openai-whisper`, and the system-level `ffmpeg` binary. Install ffmpeg via your OS package manager (e.g., `apt`, `brew`, `choco`).
 
 
 ## Coding Style & Naming
