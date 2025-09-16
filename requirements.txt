@@ -8,6 +8,7 @@ beautifulsoup4
 pytube
 google-generativeai
 yt-dlp
-# 以下為語音轉文字的函式庫，安裝時間較長
-# pip install git+https://github.com/openai/whisper.git
+# 離線語音轉文字備援所需套件（可選，但若要啟用 fallback 請務必安裝）
+# pip install --upgrade openai-whisper
+# 需要系統層級安裝 ffmpeg，可搭配 Python 介面：
 # pip install ffmpeg-python

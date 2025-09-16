@@ -17,7 +17,10 @@ python -m venv .venv
 pip install -r requirements.txt
 python main.py
 ```
-- Optional: To enable audio transcription fallback, also install Whisper and ffmpeg (see comments in `requirements.txt`).
+- Optional but recommended for YouTube videos without transcripts: install the Whisper STT stack and ffmpeg.
+  - `pip install --upgrade openai-whisper ffmpeg-python`
+  - Install the ffmpeg binary via your OS package manager (e.g. `brew install ffmpeg`, `sudo apt install ffmpeg`).
+  - Set `WHISPER_MODEL` to override the default `base` model if needed.
 
 ## Coding Style & Naming
 - Indentation: 4 spaces; follow PEP 8.
