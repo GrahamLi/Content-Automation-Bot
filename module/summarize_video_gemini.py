@@ -1,12 +1,9 @@
 import os
 import argparse
 import re
-
 import google.generativeai as genai
 from youtube_transcript_api import YouTubeTranscriptApi
 from pytube import YouTube
-from yt_dlp import YoutubeDL
-from yt_dlp.utils import DownloadError
 
 # 匯入 Whisper 函式庫，並處理可能未安裝的情況
 try:
@@ -110,81 +107,6 @@ def get_summary_from_gemini(content, api_key):
         return response.text
     except Exception as e:
         return f"錯誤：呼叫 Gemini API 失敗。詳細原因: {e}"
-
-
-def load_whisper_model():
-    """Lazy-load Whisper 模型，避免在未安裝時崩潰"""
-    global _WHISPER_MODEL, _WHISPER_IMPORT_FAILED
-
-    if _WHISPER_MODEL is not None:
-        return _WHISPER_MODEL
-
-    if _WHISPER_IMPORT_FAILED:
-        raise RuntimeError("Whisper 模組先前載入失敗，請確認已安裝 openai-whisper。")
-
-    try:
-        import whisper  # type: ignore
-    except ImportError as exc:  # pragma: no cover - 依賴於外部環境
-        _WHISPER_IMPORT_FAILED = True
-        raise RuntimeError(
-            "Whisper 模組未安裝。請執行 `pip install openai-whisper`。"
-        ) from exc
-
-    try:
-        _WHISPER_MODEL = whisper.load_model(WHISPER_MODEL_NAME)
-    except Exception as exc:  # pragma: no cover - 實際錯誤依環境而定
-        _WHISPER_IMPORT_FAILED = True
-        raise RuntimeError(f"Whisper 模型載入失敗：{exc}") from exc
-
-    return _WHISPER_MODEL
-
-
-def download_audio_with_ytdlp(video_id: str, output_dir: Path) -> Path:
-    """使用 yt-dlp 下載指定影片的最佳音訊"""
-    video_url = f"https://www.youtube.com/watch?v={video_id}"
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    options = {
-        "format": "bestaudio/best",
-        "outtmpl": str(output_dir / "%(id)s.%(ext)s"),
-        "noplaylist": True,
-        "quiet": True,
-        "no_warnings": True,
-    }
-
-    try:
-        with YoutubeDL(options) as ydl:
-            ydl.download([video_url])
-    except DownloadError as exc:
-        raise RuntimeError(f"yt-dlp 下載音訊失敗：{exc}") from exc
-
-    downloaded_files = list(output_dir.glob(f"{video_id}.*"))
-    if not downloaded_files:
-        raise RuntimeError("yt-dlp 下載完成，但找不到音訊檔案。")
-
-    return downloaded_files[0]
-
-
-def transcribe_audio_with_whisper(audio_path: Path) -> str:
-    """使用 Whisper 對音訊檔進行轉錄"""
-    model = load_whisper_model()
-    result = model.transcribe(str(audio_path))
-    text = result.get("text", "").strip()
-    if not text:
-        raise RuntimeError("Whisper 未能產生有效的逐字稿。")
-    return text
-
-
-def generate_transcript_with_whisper(video_id: str) -> Tuple[Optional[str], Optional[str]]:
-    """利用 yt-dlp + Whisper 取得影片的備援逐字稿"""
-    try:
-        with TemporaryDirectory() as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            audio_file = download_audio_with_ytdlp(video_id, tmp_path)
-            transcript_text = transcribe_audio_with_whisper(audio_file)
-            return transcript_text, None
-    except Exception as exc:
-        return None, str(exc)
 
 def main():
     """程式主進入點"""
