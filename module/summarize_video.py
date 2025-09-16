@@ -1,9 +1,17 @@
 import os
 import argparse
 import re
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Optional, Tuple
 
 import google.generativeai as genai
-from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api import (
+    YouTubeTranscriptApi,
+    NoTranscriptFound,
+    TranscriptsDisabled,
+    VideoUnavailable,
+)
 from pytube import YouTube
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
@@ -22,6 +30,10 @@ except ImportError:
 # 從環境變數讀取 API 金鑰
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
+WHISPER_MODEL_NAME = os.getenv("WHISPER_MODEL_NAME", "base")
+_WHISPER_MODEL: Optional["whisper.Whisper"] = None
+_WHISPER_IMPORT_FAILED = False
+
 
 def get_video_id(url):
     """從各種 YouTube URL 格式中解析出 video_id"""
@@ -36,57 +48,180 @@ def get_video_id(url):
             return match.group(1)
     return None
 
-def get_youtube_content(video_id):
-    """
-    (升級版) 根據 video_id 取得影片標題和逐字稿。
-    Plan A: 嘗試抓取官方 CC 字幕。
-    Plan B: 如果 Plan A 失敗，則下載音訊並使用 Whisper 進行語音轉文字。
-    """
+
+def _fetch_video_title(video_id: str) -> Optional[str]:
+    """使用 pytube 取得影片標題，失敗時回傳 None。"""
+
     try:
-        # 使用 Pytube 獲取影片標題，這一步總需要執行
         yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
-        title = yt.title
-        transcript = None
+        return yt.title
+    except Exception:
+        return None
 
-        # --- Plan A: 嘗試抓取官方 CC 字幕 ---
-        print("正在嘗試抓取官方字幕 (Plan A)...")
+
+def _call_transcript_method(owner: object, method_name: str, *args):
+    """呼叫字幕 API 的方法，並處理補齊 self 的需求。"""
+
+    try:
+        method = getattr(owner, method_name)
+    except AttributeError:
+        return None
+
+    if not callable(method):
+        return None
+
+    try:
+        return method(*args)
+    except AssertionError:
+        return None
+    except TypeError as exc:
+        if "positional argument" not in str(exc) or not isinstance(owner, type):
+            raise
         try:
-            transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['zh-TW', 'zh-Hant', 'en', 'zh-Hans'])
-            transcript = " ".join([item['text'] for item in transcript_list])
-            print("成功抓取官方字幕！")
-        except Exception as e:
-            print(f"Plan A 失敗：找不到官方字幕 ({e})。")
-            transcript = None
+            instance = owner()
+        except Exception as inst_exc:  # pragma: no cover - 取決於底層實作
+            raise exc from inst_exc
+        bound_method = getattr(instance, method_name, None)
+        if not callable(bound_method):
+            raise exc
+        try:
+            return bound_method(*args)
+        except AssertionError:
+            return None
 
-        # --- Plan B: 如果 Plan A 失敗，啟動語音轉文字 ---
-        if not transcript:
-            print("正在啟動語音轉文字備用方案 (Plan B)...")
-            if not WHISPER_AVAILABLE:
-                raise Exception("Whisper 函式庫未安裝，無法執行 Plan B。")
 
-            # 1. 下載音訊
-            print("正在下載音訊...")
-            audio_stream = yt.streams.filter(only_audio=True).first()
-            temp_dir = "temp_audio"
-            if not os.path.exists(temp_dir):
-                os.makedirs(temp_dir)
-            audio_file = audio_stream.download(output_path=temp_dir)
-            
-            # 2. 使用 Whisper 轉錄
-            print("正在使用 Whisper 進行語音轉文字，這可能需要一些時間...")
-            model = whisper.load_model("base") # "base" 模型速度快，效果不錯
-            result = model.transcribe(audio_file)
-            transcript = result['text']
-            
-            # 3. 清理暫存檔案
-            os.remove(audio_file)
-            print("Plan B 執行完畢！")
+def _list_transcripts_for_video(video_id: str):
+    """嘗試以各種方式列出影片的字幕清單。"""
 
-        return title, transcript
+    transcripts = _call_transcript_method(YouTubeTranscriptApi, "list_transcripts", video_id)
+    if transcripts is not None:
+        return transcripts
 
-    except Exception as e:
-        error_message = f"錯誤：處理影片 '{video_id}' 時發生無法恢復的錯誤。\n詳細原因: {e}"
-        return None, error_message
+    transcripts = _call_transcript_method(YouTubeTranscriptApi, "list", video_id)
+    if transcripts is not None:
+        return transcripts
+
+    return None
+
+
+def _probe_transcript_errors(
+    video_id: str,
+) -> Optional[Tuple[Optional[str], Optional[str], Optional[str]]]:
+    """使用 fetch 類方法觸發例外，以取得使用者友善訊息。"""
+
+    for method_name in ("get_transcript", "fetch"):
+        try:
+            result = _call_transcript_method(
+                YouTubeTranscriptApi,
+                method_name,
+                video_id,
+                ['zh-Hant', 'zh-TW', 'zh-CN'],
+            )
+        except TranscriptsDisabled:
+            title = _fetch_video_title(video_id)
+            return title, None, "這支影片的字幕已被停用，無法取得逐字稿。"
+        except VideoUnavailable:
+            return None, None, "影片不存在或已移除，無法取得逐字稿。"
+        except NoTranscriptFound:
+            title = _fetch_video_title(video_id)
+            return title, None, "影片沒有提供任何字幕，無法取得逐字稿。"
+        except Exception as exc:  # pragma: no cover - 非預期例外
+            error_message = (
+                f"錯誤：處理影片 '{video_id}' 時發生無法恢復的錯誤。\n詳細原因: {exc}"
+            )
+            return None, None, error_message
+
+        if result:
+            transcript_text = " ".join(
+                entry.get("text", "") for entry in result if isinstance(entry, dict)
+            ).strip()
+            if transcript_text:
+                title = _fetch_video_title(video_id)
+                return title, transcript_text, None
+
+    return None
+
+def get_youtube_content(video_id: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """嘗試取得指定影片的標題與官方字幕內容。"""
+
+    try:
+        transcripts = _list_transcripts_for_video(video_id)
+    except TranscriptsDisabled:
+        title = _fetch_video_title(video_id)
+        return title, None, "這支影片的字幕已被停用，無法取得逐字稿。"
+    except VideoUnavailable:
+        return None, None, "影片不存在或已移除，無法取得逐字稿。"
+    except NoTranscriptFound:
+        title = _fetch_video_title(video_id)
+        return title, None, "影片沒有提供任何字幕，無法取得逐字稿。"
+    except Exception as exc:
+        error_message = (
+            f"錯誤：處理影片 '{video_id}' 時發生無法恢復的錯誤。\n詳細原因: {exc}"
+        )
+        return None, None, error_message
+
+    if transcripts is None:
+        probe_result = _probe_transcript_errors(video_id)
+        if probe_result is not None:
+            return probe_result
+
+        title = _fetch_video_title(video_id)
+        return title, None, "影片沒有提供任何字幕，無法取得逐字稿。"
+
+    title = _fetch_video_title(video_id)
+    transcript_obj = None
+
+    try:
+        transcript_obj = transcripts.find_transcript(['zh-Hant', 'zh-TW', 'zh-CN'])
+    except NoTranscriptFound:
+        available_languages = []
+        for transcript in transcripts:
+            language_code = getattr(transcript, "language_code", None) or getattr(
+                transcript, "language", ""
+            )
+            if language_code and language_code not in available_languages:
+                available_languages.append(language_code)
+
+            if transcript_obj is None and getattr(transcript, "is_translatable", False):
+                try:
+                    transcript_obj = transcript.translate('zh-Hant')
+                    break
+                except NoTranscriptFound:
+                    continue
+
+        if transcript_obj is None:
+            if available_languages:
+                languages_text = ", ".join(available_languages)
+                message = (
+                    "影片僅提供以下語言的字幕，且無法翻譯成繁體中文： "
+                    f"{languages_text}。"
+                )
+            else:
+                message = "影片沒有提供任何字幕，無法取得逐字稿。"
+            return title, None, message
+    except TranscriptsDisabled:
+        return title, None, "這支影片的字幕已被停用，無法取得逐字稿。"
+    except VideoUnavailable:
+        return None, None, "影片不存在或已移除，無法取得逐字稿。"
+    except Exception as exc:
+        error_message = (
+            f"錯誤：處理影片 '{video_id}' 時發生無法恢復的錯誤。\n詳細原因: {exc}"
+        )
+        return title, None, error_message
+
+    try:
+        transcript_entries = transcript_obj.fetch()
+    except Exception as exc:
+        error_message = (
+            f"錯誤：處理影片 '{video_id}' 時發生無法恢復的錯誤。\n詳細原因: {exc}"
+        )
+        return title, None, error_message
+
+    transcript_text = " ".join(entry.get("text", "") for entry in transcript_entries).strip()
+    if not transcript_text:
+        return title, None, "取得官方字幕失敗：字幕內容為空。"
+
+    return title, transcript_text, None
 
 
 def get_summary_from_gemini(content, api_key):
@@ -199,22 +334,43 @@ def main():
 
     print(f"正在處理影片 ID: {video_id}")
     
-    title, content = get_youtube_content(video_id)
+    title, transcript, message = get_youtube_content(video_id)
 
-    if title and content: # 成功獲取到標題和內容
-        summary = get_summary_from_gemini(content, GEMINI_API_KEY)
-        
-        print("\n==================================================")
-        print(f"影片標題： {title}")
-        print("==================================================")
-        print("\n--- AI 重點摘要 ---\n")
-        print(summary)
-        print("\n-------------------\n")
-        # 如果需要，可以取消下一行的註解來顯示完整逐字稿
-        # print(f"\n--- 完整逐字稿 ---\n\n{content}")
-        print("==================================================")
-    else: # 如果 get_youtube_content 回傳了錯誤訊息
-        print(f"\n處理失敗：{content}")
+    if message:
+        print(f"\n{message}")
+
+    if not transcript:
+        if title is None:
+            return
+
+        if not WHISPER_AVAILABLE:
+            print("Whisper 函式庫未安裝，無法執行 Plan B。")
+            return
+
+        print("正在啟動語音轉文字備用方案 (Plan B)...")
+        transcript, whisper_error = generate_transcript_with_whisper(video_id)
+        if whisper_error:
+            print(f"Plan B 失敗：{whisper_error}")
+            return
+
+    if not transcript:
+        print("\n處理失敗：無法取得影片逐字稿。")
+        return
+
+    if title is None:
+        title = _fetch_video_title(video_id)
+
+    summary = get_summary_from_gemini(transcript, GEMINI_API_KEY)
+
+    print("\n==================================================")
+    print(f"影片標題： {title}")
+    print("==================================================")
+    print("\n--- AI 重點摘要 ---\n")
+    print(summary)
+    print("\n-------------------\n")
+    # 如果需要，可以取消下一行的註解來顯示完整逐字稿
+    # print(f"\n--- 完整逐字稿 ---\n\n{transcript}")
+    print("==================================================")
 
 if __name__ == "__main__":
     main()
