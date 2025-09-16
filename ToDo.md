@@ -5,6 +5,14 @@
 
 ---
 
+### Git 工作流程指南
+
+- **同步遠端更新**：在開發新功能前，先執行 `git pull`（例如 `git pull origin main`），確保本機分支與遠端保持一致。
+- **測試遠端 PR**：如需驗證尚未合併的 PR，可執行 `git fetch origin pull/<PR#>/head:feature` 將其抓到本地，接著 `git checkout feature` 在獨立分支進行測試。
+- **套用單獨的 Patch**：收到 `.patch` 檔或郵件 patch 時，可使用 `git apply <patch>` 將改動直接套用到工作目錄，再進行驗證與提交。
+
+> ⚠️ 請避免從 diff 介面手動複製貼上整段程式碼；改用上述 Git 指令來套用變更，以降低遺漏或貼錯的風險。
+
 ### 階段一：Notion 端設定 (Prerequisites)
 
 在開始寫程式碼之前，必須先在 Notion 完成的準備工作。
