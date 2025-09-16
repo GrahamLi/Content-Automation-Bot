@@ -16,10 +16,6 @@ from pytube import YouTube
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
 
-_WHISPER_MODEL = None
-_WHISPER_IMPORT_FAILED = False
-WHISPER_MODEL_NAME = "base"
-
 # 匯入 Whisper 函式庫，並處理可能未安裝的情況
 try:
     import whisper
