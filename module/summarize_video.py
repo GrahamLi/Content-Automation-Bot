@@ -1,13 +1,26 @@
 import os
 import argparse
 import re
+import importlib
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Optional, Tuple
+
 import google.generativeai as genai
-from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api import (
+    YouTubeTranscriptApi,
+    NoTranscriptFound,
+    TranscriptsDisabled,
+    VideoUnavailable,
+)
 from pytube import YouTube
 
 # --- 設定區 ---
 # 從環境變數讀取 API 金鑰
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+WHISPER_MODEL_NAME = os.getenv("WHISPER_MODEL", "base")
+_WHISPER_MODEL = None
+_WHISPER_IMPORT_FAILED = False
 
 def get_video_id(url):
     """從各種 YouTube URL 格式中解析出 video_id"""
@@ -22,24 +35,6 @@ def get_video_id(url):
         if match:
             return match.group(1)
     return None
-
-def get_youtube_content(video_id):
-    """根據 video_id 取得影片標題和逐字稿"""
-    try:
-        # 使用 Pytube 獲取影片標題
-        yt = YouTube(f"https://www.youtube.com/watch?v={video_id}")
-        title = yt.title
-        
-        # 使用 youtube-transcript-api 獲取逐字稿
-        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['zh-TW', 'zh-Hant', 'en', 'zh-Hans'])
-        transcript = " ".join([item['text'] for item in transcript_list])
-        
-        return title, transcript
-    except Exception as e:
-        print(f"錯誤：無法獲取影片 '{video_id}' 的內容。")
-        print(f"詳細原因: {e}")
-        # 這裡可以加入 Whisper 作為備用方案，但為了簡化此獨立工具，暫不加入
-        return None, None
 
 def get_summary_from_gemini(content, api_key):
     """將內容傳送給 Gemini API 以獲取摘要"""
@@ -86,11 +81,11 @@ def main():
 
     print(f"正在處理影片 ID: {video_id}")
     
-    title, transcript = get_youtube_content(video_id)
+    title, transcript, error_message = get_youtube_content(video_id)
 
     if transcript:
         summary = get_summary_from_gemini(transcript, GEMINI_API_KEY)
-        
+
         print("\n==================================================")
         print(f"影片標題： {title}")
         print("==================================================")
@@ -100,6 +95,8 @@ def main():
         # print("\n--- 完整逐字稿 ---\n") # 如果需要，可以取消這一行的註解來顯示完整逐字稿
         # print(transcript)
         print("==================================================")
+    elif error_message:
+        print(error_message)
 
 if __name__ == "__main__":
     main()
