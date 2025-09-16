@@ -7,7 +7,7 @@ requests
 beautifulsoup4
 pytube==15.0.0
 google-generativeai
-yt-dlp
+yt-dlp==2025.01.12
 openai-whisper
 ffmpeg-python
 # 系統層級依賴：ffmpeg（請使用套件管理器安裝，如 apt、brew 等）
