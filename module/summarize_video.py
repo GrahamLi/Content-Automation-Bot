@@ -77,11 +77,18 @@ def _call_transcript_method(owner: object, method_name: str, *args):
     except TypeError as exc:
         if "positional argument" not in str(exc) or not isinstance(owner, type):
             raise
+        instance = owner()
         try:
-            return method(owner(), *args)
-        except Exception:
+
             return None
 
+        if not callable(bound_method):
+            return None
+
+        try:
+            return bound_method(*args)
+        except AssertionError:
+            return None
 
 def _list_transcripts_for_video(video_id: str):
     """嘗試以各種方式列出影片的字幕清單。"""
