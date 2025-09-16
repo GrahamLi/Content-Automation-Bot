@@ -1,11 +1,11 @@
 google-api-python-client
 google-auth-oauthlib
 google-auth-httplib2
-youtube-transcript-api
+youtube-transcript-api==0.6.2
 feedparser
 requests
 beautifulsoup4
-pytube
+pytube==15.0.0
 google-generativeai
 yt-dlp
 # 離線語音轉文字備援所需套件（可選，但若要啟用 fallback 請務必安裝）
