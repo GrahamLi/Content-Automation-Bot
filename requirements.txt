@@ -8,7 +8,6 @@ beautifulsoup4
 pytube==15.0.0
 google-generativeai
 yt-dlp
-# 離線語音轉文字備援所需套件（可選，但若要啟用 fallback 請務必安裝）
-# pip install --upgrade openai-whisper
-# 需要系統層級安裝 ffmpeg，可搭配 Python 介面：
-# pip install ffmpeg-python
+openai-whisper
+ffmpeg-python
+# 系統層級依賴：ffmpeg（請使用套件管理器安裝，如 apt、brew 等）
