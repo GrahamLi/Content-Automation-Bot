@@ -16,6 +16,10 @@ from pytube import YouTube
 from yt_dlp import YoutubeDL
 from yt_dlp.utils import DownloadError
 
+_WHISPER_MODEL = None
+_WHISPER_IMPORT_FAILED = False
+WHISPER_MODEL_NAME = "base"
+
 # 匯入 Whisper 函式庫，並處理可能未安裝的情況
 try:
     import whisper
@@ -78,16 +82,6 @@ def _call_transcript_method(owner: object, method_name: str, *args):
         if "positional argument" not in str(exc) or not isinstance(owner, type):
             raise
         try:
-            instance = owner()
-        except Exception as inst_exc:  # pragma: no cover - 取決於底層實作
-            raise exc from inst_exc
-        bound_method = getattr(instance, method_name, None)
-        if not callable(bound_method):
-            raise exc
-        try:
-            return bound_method(*args)
-        except AssertionError:
-            return None
 
 
 def _list_transcripts_for_video(video_id: str):
@@ -274,7 +268,9 @@ def load_whisper_model():
     return _WHISPER_MODEL
 
 
-def download_audio_with_ytdlp(video_id: str, output_dir: Path) -> Path:
+def download_audio_with_ytdlp(
+    video_id: str, output_dir: Path
+) -> Tuple[Optional[Path], Optional[str]]:
     """使用 yt-dlp 下載指定影片的最佳音訊"""
     video_url = f"https://www.youtube.com/watch?v={video_id}"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -291,13 +287,15 @@ def download_audio_with_ytdlp(video_id: str, output_dir: Path) -> Path:
         with YoutubeDL(options) as ydl:
             ydl.download([video_url])
     except DownloadError as exc:
-        raise RuntimeError(f"yt-dlp 下載音訊失敗：{exc}") from exc
+        return None, f"yt-dlp 下載音訊失敗：{exc}"
+    except Exception as exc:  # pragma: no cover - 依賴於外部工具
+        return None, f"yt-dlp 下載音訊時發生未預期的錯誤：{exc}"
 
     downloaded_files = list(output_dir.glob(f"{video_id}.*"))
     if not downloaded_files:
-        raise RuntimeError("yt-dlp 下載完成，但找不到音訊檔案。")
+        return None, "yt-dlp 下載完成，但找不到音訊檔案。"
 
-    return downloaded_files[0]
+    return downloaded_files[0], None
 
 
 def transcribe_audio_with_whisper(audio_path: Path) -> str:
@@ -315,10 +313,19 @@ def generate_transcript_with_whisper(video_id: str) -> Tuple[Optional[str], Opti
     try:
         with TemporaryDirectory() as tmp_dir:
             tmp_path = Path(tmp_dir)
-            audio_file = download_audio_with_ytdlp(video_id, tmp_path)
-            transcript_text = transcribe_audio_with_whisper(audio_file)
+            audio_file, download_error = download_audio_with_ytdlp(video_id, tmp_path)
+            if download_error:
+                return None, download_error
+            if audio_file is None:  # 型別保險，理論上不會發生
+                return None, "yt-dlp 未傳回音訊檔案。"
+
+            try:
+                transcript_text = transcribe_audio_with_whisper(audio_file)
+            except Exception as exc:  # pragma: no cover - 依環境而定
+                return None, str(exc)
+
             return transcript_text, None
-    except Exception as exc:
+    except Exception as exc:  # pragma: no cover - 建立暫存目錄失敗等
         return None, str(exc)
 
 def main():

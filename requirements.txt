@@ -10,4 +10,6 @@ google-generativeai
 yt-dlp
 openai-whisper
 ffmpeg-python
-# 系統層級依賴：ffmpeg（請使用套件管理器安裝，如 apt、brew 等）
+# Whisper/yt-dlp 備援轉錄流程需要：
+# - pip 套件：yt-dlp、openai-whisper、ffmpeg-python
+# - 系統層級 ffmpeg 二進位檔（請以 apt、brew、choco 等套件管理器安裝）
