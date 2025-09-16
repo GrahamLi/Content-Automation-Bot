@@ -82,6 +82,9 @@ def _call_transcript_method(owner: object, method_name: str, *args):
         if "positional argument" not in str(exc) or not isinstance(owner, type):
             raise
         try:
+            return method(owner(), *args)
+        except Exception:
+            return None
 
 
 def _list_transcripts_for_video(video_id: str):
