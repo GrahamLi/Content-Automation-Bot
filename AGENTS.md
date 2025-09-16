@@ -18,6 +18,7 @@ pip install -r requirements.txt
 python main.py
 ```
 - Optional: To enable audio transcription fallback, also install Whisper and ffmpeg (see comments in `requirements.txt`).
+- Maintenance: When YouTube updates its transcript APIs or site layout, verify that `pytube` and `youtube-transcript-api` still function and bump the pinned versions in `requirements.txt` if breakages occur.
 
 ## Coding Style & Naming
 - Indentation: 4 spaces; follow PEP 8.
