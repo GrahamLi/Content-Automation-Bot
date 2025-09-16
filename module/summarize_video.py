@@ -22,6 +22,19 @@ WHISPER_MODEL_NAME = os.getenv("WHISPER_MODEL", "base")
 _WHISPER_MODEL = None
 _WHISPER_IMPORT_FAILED = False
 
+
+def get_youtube_content(video_id: str) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    try:
+        transcript_list = YouTubeTranscriptApi.get_transcript(
+            video_id, languages=["zh-TW", "en"]
+        )
+        transcript = "\n".join(item["text"] for item in transcript_list)
+        title = YouTube(f"https://www.youtube.com/watch?v={video_id}").title
+        return title, transcript, None
+    except Exception as e:
+        return None, None, f"錯誤：無法獲取影片 '{video_id}' 的內容。詳細原因: {e}"
+
+
 def get_video_id(url):
     """從各種 YouTube URL 格式中解析出 video_id"""
     # 正則表達式，匹配各種 YouTube 網址
