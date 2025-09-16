@@ -18,6 +18,7 @@ pip install -r requirements.txt
 python main.py
 ```
 - Offline transcript fallback requires additional tools: `yt-dlp`, `openai-whisper`, and the system-level `ffmpeg` binary. Install ffmpeg via your OS package manager (e.g., `apt`, `brew`, `choco`).
+- If transcript retrieval fails, verify that `youtube-transcript-api`, `pytube`, and `yt-dlp` are up to date, and check for newer releases.
 
 
 ## Coding Style & Naming
