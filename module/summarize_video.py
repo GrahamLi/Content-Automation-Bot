@@ -79,7 +79,8 @@ def _call_transcript_method(owner: object, method_name: str, *args):
             raise
         instance = owner()
         try:
-
+            bound_method = getattr(instance, method_name)
+        except AttributeError:
             return None
 
         if not callable(bound_method):
